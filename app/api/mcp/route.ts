@@ -1,75 +1,30 @@
-import { NextRequest } from 'next/server';
+import { NextResponse } from "next/server";
 
-export const runtime = 'edge';
+// Stateless JSON-RPC MCP endpoint. The writing desk has a single static entry and no editor, so this server
+// exposes no tools: it answers initialize and an empty tools/list, and rejects everything else.
 
-interface MCPRequest {
-  jsonrpc: '2.0';
-  id: number | string;
-  method: string;
-  params?: any;
-}
+type RpcRequest = { id?: number | string | null; method?: string };
 
-interface MCPResponse {
-  jsonrpc: '2.0';
-  id: number | string;
-  result?: any;
-  error?: {
-    code: number;
-    message: string;
-  };
-}
-
-async function getData() {
-  return { message: 'Sample data' };
-}
-
-export async function POST(request: NextRequest) {
-  let requestId: number | string = 0;
-
+export async function POST(request: Request) {
+  let id: RpcRequest["id"] = null;
   try {
-    const body: MCPRequest = await request.json();
-    requestId = body.id;
-    const { method, params, id } = body;
-
-    let result: any = {};
-
-    switch (method) {
-      case 'initialize':
-        result = {
-          protocolVersion: '2024-11-05',
-          capabilities: { tools: {} },
-          serverInfo: { name: 'MCP Server', version: '1.0.0' }
-        };
-        break;
-
-      case 'tools/list':
-        result = {
-          tools: [
-            {
-              name: 'get_data',
-              description: 'Get sample data',
-              inputSchema: { type: 'object', properties: {} }
-            }
-          ]
-        };
-        break;
-
-      case 'tools/call':
-        result = await getData();
-        break;
-
+    const body = (await request.json()) as RpcRequest;
+    id = body.id ?? null;
+    switch (body.method) {
+      case "initialize":
+        return NextResponse.json({
+          jsonrpc: "2.0",
+          id,
+          result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "Writing Desk", version: "1.0.0" } },
+        });
+      case "tools/list":
+        return NextResponse.json({ jsonrpc: "2.0", id, result: { tools: [] } });
+      case "tools/call":
+        return NextResponse.json({ jsonrpc: "2.0", id, error: { code: -32602, message: "This server has no tools" } }, { status: 400 });
       default:
-        throw new Error(`Unknown method: ${method}`);
+        return NextResponse.json({ jsonrpc: "2.0", id, error: { code: -32601, message: `Unknown method: ${String(body.method)}` } }, { status: 400 });
     }
-
-    return Response.json({ jsonrpc: '2.0', id, result });
-
-  } catch (error) {
-    return Response.json({
-      jsonrpc: '2.0',
-      id: requestId,
-      error: { code: -32603, message: error instanceof Error ? error.message : 'Internal error' }
-    }, { status: 500 });
+  } catch {
+    return NextResponse.json({ jsonrpc: "2.0", id, error: { code: -32700, message: "Parse error" } }, { status: 400 });
   }
 }
-
